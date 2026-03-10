@@ -1,14 +1,11 @@
 /**
- * @type {import('@opencode-ai/plugin').Plugin}
+ * @type {import("@opencode-ai/plugin").Plugin}
  */
-export async function CopilotAuthPlugin({ client }) {
-  const CLIENT_ID = "Iv1.b507a08c87ecfe98";
-  const HEADERS = {
-    "User-Agent": "GitHubCopilotChat/0.35.0",
-    "Editor-Version": "vscode/1.107.0",
-    "Editor-Plugin-Version": "copilot-chat/0.35.0",
-    "Copilot-Integration-Id": "vscode-chat",
-  };
+export async function CopilotAuthPlugin() {
+  const CLIENT_ID = "Ov23ctDVkRmgkPke0Mmm";
+  const API_VERSION = "2025-05-01";
+  const OAUTH_POLLING_SAFETY_MARGIN_MS = 3000;
+  const OAUTH_SCOPES = "read:user read:org repo gist";
   const RESPONSES_API_ALTERNATE_INPUT_TYPES = [
     "file_search_call",
     "computer_call",
@@ -32,130 +29,201 @@ export async function CopilotAuthPlugin({ client }) {
   }
 
   function getUrls(domain) {
+    const apiDomain = domain === "github.com" ? "api.github.com" : `api.${domain}`;
     return {
       DEVICE_CODE_URL: `https://${domain}/login/device/code`,
       ACCESS_TOKEN_URL: `https://${domain}/login/oauth/access_token`,
-      COPILOT_API_KEY_URL: `https://api.${domain}/copilot_internal/v2/token`,
+      COPILOT_ENTITLEMENT_URL: `https://${apiDomain}/copilot_internal/user`,
     };
+  }
+
+  async function fetchEntitlement(info) {
+    const domain = info.enterpriseUrl ? normalizeDomain(info.enterpriseUrl) : "github.com";
+    const urls = getUrls(domain);
+
+    const response = await fetch(urls.COPILOT_ENTITLEMENT_URL, {
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${info.refresh}`,
+        "User-Agent": "GithubCopilot/1.155.0",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Entitlement fetch failed: ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  async function fetchModels(info, baseURL) {
+    const response = await fetch(`${baseURL}/models`, {
+      headers: {
+        Authorization: `Bearer ${info.refresh}`,
+        "Copilot-Integration-Id": "copilot-developer-cli",
+        "Openai-Intent": "model-access",
+        "User-Agent": "opencode-copilot-auth/0.0.11",
+        "X-GitHub-Api-Version": API_VERSION,
+        "X-Interaction-Type": "model-access",
+        "X-Request-Id": crypto.randomUUID(),
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Model fetch failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return Array.isArray(data?.data) ? data.data : [];
+  }
+
+  function patchProviderModels(provider, liveModels) {
+    if (!provider?.models) return;
+
+    const liveById = new Map(liveModels.map((model) => [model.id, model]));
+
+    for (const model of Object.values(provider.models)) {
+      model.cost = {
+        input: 0,
+        output: 0,
+        cache: {
+          read: 0,
+          write: 0,
+        },
+      };
+      model.api.npm = "@ai-sdk/github-copilot";
+
+      const live = liveById.get(model.id);
+      if (!live) continue;
+
+      const limits = live.capabilities?.limits ?? {};
+      const supports = live.capabilities?.supports ?? {};
+      const vision = !!supports.vision || !!limits.vision;
+
+      model.limit.context =
+        limits.max_context_window_tokens
+        ?? model.limit.context;
+      model.limit.input =
+        limits.max_prompt_tokens
+        ?? model.limit.input
+        ?? limits.max_context_window_tokens;
+      model.limit.output =
+        limits.max_output_tokens
+        ?? limits.max_non_streaming_output_tokens
+        ?? model.limit.output;
+
+      model.capabilities.reasoning =
+        model.capabilities.reasoning
+        || !!supports.adaptive_thinking
+        || typeof supports.max_thinking_budget === "number"
+        || Array.isArray(supports.reasoning_effort);
+      model.capabilities.attachment = model.capabilities.attachment || vision;
+      model.capabilities.toolcall =
+        model.capabilities.toolcall || !!supports.tool_calls;
+
+      if (vision) {
+        model.capabilities.input.image = true;
+      }
+    }
+  }
+
+  function getConversationMetadata(init) {
+    try {
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) : init?.body;
+
+      if (body?.messages) {
+        const lastMessage = body.messages[body.messages.length - 1];
+        return {
+          isVision: body.messages.some(
+            (message) =>
+              Array.isArray(message.content) &&
+              message.content.some((part) => part.type === "image_url"),
+          ),
+          isAgent:
+            lastMessage?.role &&
+            ["tool", "assistant"].includes(lastMessage.role),
+        };
+      }
+
+      if (body?.input) {
+        const lastInput = body.input[body.input.length - 1];
+        const isAssistant = lastInput?.role === "assistant";
+        const hasAgentType = lastInput?.type
+          ? RESPONSES_API_ALTERNATE_INPUT_TYPES.includes(lastInput.type)
+          : false;
+
+        return {
+          isVision:
+            Array.isArray(lastInput?.content) &&
+            lastInput.content.some((part) => part.type === "input_image"),
+          isAgent: isAssistant || hasAgentType,
+        };
+      }
+    } catch {}
+
+    return {
+      isVision: false,
+      isAgent: false,
+    };
+  }
+
+  function buildHeaders(init, info, isVision, isAgent) {
+    const headers = {
+      ...(init?.headers ?? {}),
+      Authorization: `Bearer ${info.refresh}`,
+      "Copilot-Integration-Id": "copilot-developer-cli",
+      "Openai-Intent": "conversation-agent",
+      "User-Agent": "opencode-copilot-auth/0.0.11",
+      "X-GitHub-Api-Version": API_VERSION,
+      "X-Initiator": isAgent ? "agent" : "user",
+      "X-Interaction-Id": crypto.randomUUID(),
+      "X-Interaction-Type": "conversation-agent",
+      "X-Request-Id": crypto.randomUUID(),
+    };
+
+    if (isVision) {
+      headers["Copilot-Vision-Request"] = "true";
+    }
+
+    delete headers["x-api-key"];
+    delete headers["authorization"];
+
+    return headers;
   }
 
   return {
     auth: {
       provider: "github-copilot",
       loader: async (getAuth, provider) => {
-        let info = await getAuth();
+        const info = await getAuth();
         if (!info || info.type !== "oauth") return {};
 
-        if (provider && provider.models) {
-          for (const model of Object.values(provider.models)) {
-            model.cost = {
-              input: 0,
-              output: 0,
-              cache: {
-                read: 0,
-                write: 0,
-              },
-            };
-          }
+        let baseURL = info.baseUrl;
+        if (!baseURL) {
+          const entitlement = await fetchEntitlement(info);
+          baseURL = entitlement?.endpoints?.api;
         }
 
-        // Set baseURL based on deployment type
-        const enterpriseUrl = info.enterpriseUrl;
-        const baseURL = enterpriseUrl
-          ? `https://copilot-api.${normalizeDomain(enterpriseUrl)}`
-          : "https://api.githubcopilot.com";
+        if (baseURL) {
+          try {
+            const liveModels = await fetchModels(info, baseURL);
+            patchProviderModels(provider, liveModels);
+          } catch {}
+        } else {
+          patchProviderModels(provider, []);
+        }
 
         return {
-          baseURL,
+          ...(baseURL && { baseURL }),
           apiKey: "",
           async fetch(input, init) {
-            const info = await getAuth();
-            if (info.type !== "oauth") return {};
-            if (!info.access || info.expires < Date.now()) {
-              const domain = info.enterpriseUrl
-                ? normalizeDomain(info.enterpriseUrl)
-                : "github.com";
-              const urls = getUrls(domain);
-
-              const response = await fetch(urls.COPILOT_API_KEY_URL, {
-                headers: {
-                  Accept: "application/json",
-                  Authorization: `Bearer ${info.refresh}`,
-                  ...HEADERS,
-                },
-              });
-
-              if (!response.ok) {
-                throw new Error(`Token refresh failed: ${response.status}`);
-              }
-
-              const tokenData = await response.json();
-
-              const saveProviderID = info.enterpriseUrl
-                ? "github-copilot-enterprise"
-                : "github-copilot";
-              await client.auth.set({
-                path: {
-                  id: saveProviderID,
-                },
-                body: {
-                  type: "oauth",
-                  refresh: info.refresh,
-                  access: tokenData.token,
-                  expires: tokenData.expires_at * 1000 - 5 * 60 * 1000,
-                  ...(info.enterpriseUrl && {
-                    enterpriseUrl: info.enterpriseUrl,
-                  }),
-                },
-              });
-              info.access = tokenData.token;
-            }
-            let isAgentCall = false;
-            let isVisionRequest = false;
-            try {
-              const body =
-                typeof init.body === "string"
-                  ? JSON.parse(init.body)
-                  : init.body;
-              if (body?.messages) {
-                if (body.messages.length > 0) {
-                  const lastMessage = body.messages[body.messages.length - 1];
-                  isAgentCall = lastMessage.role && ["tool", "assistant"].includes(lastMessage.role);
-                }
-                isVisionRequest = body.messages.some(
-                  (msg) =>
-                    Array.isArray(msg.content) &&
-                    msg.content.some((part) => part.type === "image_url"),
-                );
-              }
-
-              if (body?.input) {
-                const lastInput = body.input[body.input.length - 1];
-
-                const isAssistant = lastInput?.role === "assistant";
-                const hasAgentType = lastInput?.type
-                  ? RESPONSES_API_ALTERNATE_INPUT_TYPES.includes(lastInput.type)
-                  : false;
-                isAgentCall = isAssistant || hasAgentType;
-
-                isVisionRequest =
-                  Array.isArray(lastInput?.content) &&
-                  lastInput.content.some((part) => part.type === "input_image");
-              }
-            } catch {}
-            const headers = {
-              ...init.headers,
-              ...HEADERS,
-              Authorization: `Bearer ${info.access}`,
-              "Openai-Intent": "conversation-edits",
-              "X-Initiator": isAgentCall ? "agent" : "user",
-            };
-            if (isVisionRequest) {
-              headers["Copilot-Vision-Request"] = "true";
+            const auth = await getAuth();
+            if (!auth || auth.type !== "oauth") {
+              return fetch(input, init);
             }
 
-            delete headers["x-api-key"];
-            delete headers["authorization"];
+            const { isVision, isAgent } = getConversationMetadata(init);
+            const headers = buildHeaders(init, auth, isVision, isAgent);
 
             return fetch(input, {
               ...init,
@@ -167,7 +235,7 @@ export async function CopilotAuthPlugin({ client }) {
       methods: [
         {
           type: "oauth",
-          label: "Login with GitHub Copilot",
+          label: "Login with GitHub Copilot CLI",
           prompts: [
             {
               type: "select",
@@ -198,8 +266,9 @@ export async function CopilotAuthPlugin({ client }) {
                   const url = value.includes("://")
                     ? new URL(value)
                     : new URL(`https://${value}`);
-                  if (!url.hostname)
+                  if (!url.hostname) {
                     return "Please enter a valid URL or domain";
+                  }
                   return undefined;
                 } catch {
                   return "Please enter a valid URL (e.g., company.ghe.com or https://company.ghe.com)";
@@ -214,8 +283,7 @@ export async function CopilotAuthPlugin({ client }) {
             let actualProvider = "github-copilot";
 
             if (deploymentType === "enterprise") {
-              const enterpriseUrl = inputs.enterpriseUrl;
-              domain = normalizeDomain(enterpriseUrl);
+              domain = normalizeDomain(inputs.enterpriseUrl);
               actualProvider = "github-copilot-enterprise";
             }
 
@@ -226,11 +294,11 @@ export async function CopilotAuthPlugin({ client }) {
               headers: {
                 Accept: "application/json",
                 "Content-Type": "application/json",
-                "User-Agent": "GitHubCopilotChat/0.35.0",
+                "User-Agent": "opencode-copilot-auth/0.0.11",
               },
               body: JSON.stringify({
                 client_id: CLIENT_ID,
-                scope: "read:user",
+                scope: OAUTH_SCOPES,
               }),
             });
 
@@ -251,7 +319,7 @@ export async function CopilotAuthPlugin({ client }) {
                     headers: {
                       Accept: "application/json",
                       "Content-Type": "application/json",
-                      "User-Agent": "GitHubCopilotChat/0.35.0",
+                      "User-Agent": "opencode-copilot-auth/0.0.11",
                     },
                     body: JSON.stringify({
                       client_id: CLIENT_ID,
@@ -266,11 +334,20 @@ export async function CopilotAuthPlugin({ client }) {
                   const data = await response.json();
 
                   if (data.access_token) {
+                    const entitlement = await fetchEntitlement({
+                      refresh: data.access_token,
+                      enterpriseUrl:
+                        actualProvider === "github-copilot-enterprise"
+                          ? domain
+                          : undefined,
+                    });
+
                     const result = {
                       type: "success",
                       refresh: data.access_token,
-                      access: "",
+                      access: data.access_token,
                       expires: 0,
+                      baseUrl: entitlement?.endpoints?.api,
                     };
 
                     if (actualProvider === "github-copilot-enterprise") {
@@ -283,7 +360,25 @@ export async function CopilotAuthPlugin({ client }) {
 
                   if (data.error === "authorization_pending") {
                     await new Promise((resolve) =>
-                      setTimeout(resolve, deviceData.interval * 1000),
+                      setTimeout(
+                        resolve,
+                        deviceData.interval * 1000
+                          + OAUTH_POLLING_SAFETY_MARGIN_MS,
+                      ),
+                    );
+                    continue;
+                  }
+
+                  if (data.error === "slow_down") {
+                    const nextInterval =
+                      (typeof data.interval === "number" && data.interval > 0 ?
+                        data.interval
+                      : deviceData.interval + 5) * 1000;
+                    await new Promise((resolve) =>
+                      setTimeout(
+                        resolve,
+                        nextInterval + OAUTH_POLLING_SAFETY_MARGIN_MS,
+                      ),
                     );
                     continue;
                   }
@@ -291,9 +386,12 @@ export async function CopilotAuthPlugin({ client }) {
                   if (data.error) return { type: "failed" };
 
                   await new Promise((resolve) =>
-                    setTimeout(resolve, deviceData.interval * 1000),
+                    setTimeout(
+                      resolve,
+                      deviceData.interval * 1000
+                        + OAUTH_POLLING_SAFETY_MARGIN_MS,
+                    ),
                   );
-                  continue;
                 }
               },
             };
