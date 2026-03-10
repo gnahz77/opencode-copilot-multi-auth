@@ -124,6 +124,15 @@ export async function CopilotAuthPlugin() {
       if (vision) {
         model.capabilities.input.image = true;
       }
+
+      if (model.api?.npm === "@ai-sdk/github-copilot" && model.id.includes("claude")) {
+        model.variants = {
+          low: { thinking_budget: 1024 },
+          medium: { thinking_budget: 4000 },
+          high: { thinking_budget: Math.min(16000, Math.floor(model.limit.output / 2 - 1)) },
+          max: { thinking_budget: Math.min(31999, model.limit.output - 1) },
+        };
+      }
     }
   }
 
