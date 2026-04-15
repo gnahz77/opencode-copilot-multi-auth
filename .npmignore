@@ -1,0 +1,8 @@
+.github/
+.idea/
+.sisyphus/
+test/
+script/
+AGENTS.md
+package-lock.json
+bun.lock
