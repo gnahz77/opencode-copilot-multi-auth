@@ -1,6 +1,6 @@
-# opencode-copilot-cli-auth
+# opencode-copilot-multi-auth
 
-Package on npm: https://www.npmjs.com/package/@zhzy0077/opencode-copilot-cli-auth
+Package on npm: https://www.npmjs.com/package/@gnahz77/opencode-copilot-multi-auth
 
 This fork replaces the older GitHub Copilot chat-auth flow with the newer Copilot CLI-style OAuth flow and makes `opencode` use the live Copilot model metadata for your account.
 
@@ -12,7 +12,7 @@ Add the plugin to your `opencode` config:
 {
   "$schema": "https://opencode.ai/config.json",
   "plugin": [
-    "@zhzy0077/opencode-copilot-cli-auth@0.0.19"
+    "@gnahz77/opencode-copilot-multi-auth@0.1.0"
   ]
 }
 ```
@@ -96,4 +96,54 @@ The plugin intentionally does not try to change the `opencode` core UI. So the v
 
 ```zsh
 ./script/publish.ts
+```
+
+## Multi-Account Support
+
+This fork can keep a pool of Copilot logins in `~/.local/share/opencode/copilot-auth.json`.
+Each successful OAuth login updates that pool automatically: logging in with a new deployment-scoped account appends a new record, and logging in again with the same GitHub identity on the same deployment updates the existing record instead of creating a duplicate.
+
+The pool stores one object per account under `accounts` in a `version: 1` document.
+
+| Field | Meaning |
+| --- | --- |
+| `id` | Stable human-friendly identifier stored with the account record. |
+| `name` | Display name for the account. |
+| `enabled` | Whether the account can participate in automatic routing. Disabled accounts stay stored but are ignored for winner selection. |
+| `priority` | Higher values win when multiple enabled accounts can serve the same raw model ID. |
+| `allowlist` | Exact raw model IDs this account is allowed to serve. Empty means no allowlist restriction. |
+| `blocklist` | Exact raw model IDs this account must never serve, even if its allowlist or priority would otherwise match. |
+
+Automatic routing works on the raw Copilot model IDs that `opencode` already uses. The plugin filters eligible accounts by `enabled`, then applies `allowlist` and `blocklist`, and finally picks exactly one winning account by highest `priority` (with a stable key-based tie-breaker). The model ID itself is not rewritten, so account identity does not appear in model IDs.
+
+Example pool file:
+
+```json
+{
+  "version": 1,
+  "accounts": [
+    {
+      "key": "github.com:12345678",
+      "id": "work",
+      "name": "Work",
+      "enabled": true,
+      "priority": 100,
+      "allowlist": ["claude-sonnet-4.6"],
+      "blocklist": [],
+      "deployment": "github.com",
+      "domain": "github.com",
+      "baseUrl": "https://api.githubcopilot.com",
+      "identity": {
+        "login": "octocat",
+        "userId": 12345678
+      },
+      "auth": {
+        "type": "oauth",
+        "refresh": "<oauth token>"
+      },
+      "createdAt": "2026-04-15T00:00:00.000Z",
+      "updatedAt": "2026-04-15T00:00:00.000Z"
+    }
+  ]
+}
 ```
