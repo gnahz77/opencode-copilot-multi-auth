@@ -317,6 +317,32 @@ function runResolution() {
     throw new Error(`Expected github.com-personal to win gpt-4.1, got ${gptWinner?.key ?? "null"}`);
   }
 
+  const allowlistRestrictedWinner = resolveWinnerAccount("gpt-4.1", {
+    version: 1,
+    accounts: [
+      {
+        key: "allowlist-only-high-priority",
+        enabled: true,
+        priority: 1000,
+        allowlist: ["claude-sonnet-4.6"],
+        blocklist: [],
+      },
+      {
+        key: "fallback-account",
+        enabled: true,
+        priority: 1,
+        allowlist: [],
+        blocklist: [],
+      },
+    ],
+  });
+
+  if (allowlistRestrictedWinner?.key !== "fallback-account") {
+    throw new Error(
+      `Expected fallback-account when higher-priority account allowlist excludes gpt-4.1, got ${allowlistRestrictedWinner?.key ?? "null"}`,
+    );
+  }
+
   const tieWinner = resolveWinnerAccount("any-model", {
     version: 1,
     accounts: [
@@ -366,6 +392,7 @@ function runResolution() {
   }
 
   process.stdout.write("PASS resolution-work-wins-for-claude-sonnet-4.6\n");
+  process.stdout.write("PASS non-empty-allowlist-restricts-account\n");
   process.stdout.write("PASS priority-tie-breaker-key-order\n");
 }
 

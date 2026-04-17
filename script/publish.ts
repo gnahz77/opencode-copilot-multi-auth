@@ -17,8 +17,11 @@ const version = pkg.version;
 
 console.log(`New version: ${version}`);
 
+console.log("Building TypeScript output...");
+await $`npm run build`;
+
 // Commit the version bump
-await $`git add package.json`;
+await $`git add package.json dist`;
 await $`git commit -m "Bump version to ${version}"`;
 await $`git push`;
 
