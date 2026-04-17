@@ -176,13 +176,19 @@ export function upsertAccount(pool: AccountPool, accountData: UpsertAccountData)
 }
 
 export function resolveWinnerAccount(rawModelId: string, pool: AccountPool) {
+  const canAccountServeModel = (account: PoolAccount) => {
+    const allowlist = normalizeList(account?.allowlist);
+    if (allowlist.length > 0 && !allowlist.includes(rawModelId)) {
+      return false;
+    }
+
+    const blocklist = normalizeList(account?.blocklist);
+    return !blocklist.includes(rawModelId);
+  };
+
   const candidates = (Array.isArray(pool?.accounts) ? pool.accounts : [])
     .filter((account) => account?.enabled !== false)
-    .filter((account) => {
-      const allowlist = normalizeList(account?.allowlist);
-      return allowlist.length === 0 || allowlist.includes(rawModelId);
-    })
-    .filter((account) => !normalizeList(account?.blocklist).includes(rawModelId))
+    .filter(canAccountServeModel)
     .sort((left, right) => {
       const priorityDelta = normalizePriority(right?.priority) - normalizePriority(left?.priority);
       if (priorityDelta !== 0) {

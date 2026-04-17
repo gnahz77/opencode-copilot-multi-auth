@@ -12,12 +12,26 @@ Add the plugin to your `opencode` config:
 {
   "$schema": "https://opencode.ai/config.json",
   "plugin": [
-    "@gnahz77/opencode-copilot-multi-auth@0.1.0"
+    "@gnahz77/opencode-copilot-multi-auth@0.1.1"
   ]
 }
 ```
 
 Then start `opencode` and log in to the `github-copilot` provider. The plugin handles the Copilot CLI-style device flow and will reuse the stored GitHub OAuth token afterward.
+
+If you also want the TUI command support provided by this package, add the same plugin to your `tui.json` or `tui.jsonc`:
+
+```json
+{
+  "$schema": "https://opencode.ai/tui.json",
+  "plugin": [
+    "@gnahz77/opencode-copilot-multi-auth@0.1.1"
+  ]
+}
+```
+
+After restarting OpenCode TUI, you can open the command palette and run `copilot-usage`, or type `/copilot-usage`.
+The plugin will open a popup dialog showing all accounts currently stored in `~/.local/share/opencode/copilot-auth.json`.
 
 For local development before publishing, you can load the file directly:
 
@@ -31,6 +45,39 @@ For local development before publishing, you can load the file directly:
 ```
 
 Important: if the file path contains `opencode-copilot-auth`, current `opencode` builds may skip loading it because of a hardcoded plugin-name filter. Use a path that does not contain that substring.
+
+If you are loading the plugin locally during development and want to use `copilot-usage`, add the built TUI entry to your TUI config as well:
+
+```json
+{
+  "$schema": "https://opencode.ai/tui.json",
+  "plugin": [
+    "file:///absolute/path/to/dist/tui.js"
+  ]
+}
+```
+
+## `copilot-usage` command
+
+This package now includes a TUI command named `copilot-usage`.
+
+- Command palette entry: `copilot-usage`
+- Slash command: `/copilot-usage`
+
+What it does:
+
+- Reads every Copilot account stored in `~/.local/share/opencode/copilot-auth.json`
+- Calls the GitHub Copilot entitlement endpoint `/copilot_internal/user` for each account using that account's OAuth token
+- Opens a popup dialog showing, for each account:
+  - account name
+  - used / total usage bar
+  - used percentage
+
+Notes:
+
+- The command is part of the package's TUI target, so `opencode.json` alone is not enough; `tui.json` must also load the plugin.
+- Disabled accounts are still shown in the popup and are marked as disabled.
+- If one account fails to load usage data, the popup still shows the other accounts and includes the per-account error message inline.
 
 ## What changed in this fork
 
@@ -111,10 +158,10 @@ The pool stores one object per account under `accounts` in a `version: 1` docume
 | `name` | Display name for the account. |
 | `enabled` | Whether the account can participate in automatic routing. Disabled accounts stay stored but are ignored for winner selection. |
 | `priority` | Higher values win when multiple enabled accounts can serve the same raw model ID. |
-| `allowlist` | Exact raw model IDs this account is allowed to serve. Empty means no allowlist restriction. |
-| `blocklist` | Exact raw model IDs this account must never serve, even if its allowlist or priority would otherwise match. |
+| `allowlist` | Exact raw model IDs this account is allowed to serve. If non-empty, the account can only serve models listed here. |
+| `blocklist` | Exact raw model IDs this account must never serve. If both `allowlist` and `blocklist` are non-empty, the plugin checks `allowlist` first and then applies `blocklist`. |
 
-Automatic routing works on the raw Copilot model IDs that `opencode` already uses. The plugin filters eligible accounts by `enabled`, then applies `allowlist` and `blocklist`, and finally picks exactly one winning account by highest `priority` (with a stable key-based tie-breaker). The model ID itself is not rewritten, so account identity does not appear in model IDs.
+Automatic routing works on the raw Copilot model IDs that `opencode` already uses. The plugin filters eligible accounts by `enabled`, then checks `allowlist` first (when non-empty, the model must be listed there), then applies `blocklist`, and finally picks exactly one winning account by highest `priority` (with a stable key-based tie-breaker). The model ID itself is not rewritten, so account identity does not appear in model IDs.
 
 Example pool file:
 
