@@ -25,7 +25,7 @@ For local development before publishing, you can load the file directly:
 {
   "$schema": "https://opencode.ai/config.json",
   "plugin": [
-    "file:///absolute/path/to/index.mjs"
+    "file:///absolute/path/to/dist/index.js"
   ]
 }
 ```

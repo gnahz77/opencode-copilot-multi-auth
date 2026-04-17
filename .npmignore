@@ -6,3 +6,5 @@ script/
 AGENTS.md
 package-lock.json
 bun.lock
+src/
+tsconfig.json
