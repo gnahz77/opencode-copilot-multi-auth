@@ -156,7 +156,7 @@ export const CopilotAuthPlugin: Plugin = async (input) => {
                   }
                   return undefined;
                 } catch {
-                  return "Please enter a valid URL (e.g., company.ghe.com or https://company.ghe.com)";
+                  return "Please enter a valid URL";
                 }
               },
             },
