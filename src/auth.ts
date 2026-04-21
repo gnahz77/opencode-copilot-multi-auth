@@ -8,6 +8,7 @@ import {
   getConversationMetadata,
   isValidBaseURL,
   normalizeDomain,
+  normalizeHeaderObject,
 } from "./utils.js";
 
 export function getUrls(domain: string) {
@@ -102,7 +103,7 @@ function getHeader(headers: HeaderObject, name: string): string | undefined {
 export function buildHeaders(init: RequestInit | undefined, info: AuthInput, isVision: boolean, isAgent: boolean) {
   const explicitInitiator = getHeader(init?.headers, "x-initiator");
   const headers: Record<string, string> = {
-    ...(init?.headers as Record<string, string> ?? {}),
+    ...normalizeHeaderObject(init?.headers),
     Authorization: `Bearer ${info.refresh}`,
     "Copilot-Integration-Id": "copilot-developer-cli",
     "Openai-Intent": "conversation-agent",

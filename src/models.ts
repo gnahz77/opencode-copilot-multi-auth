@@ -145,7 +145,7 @@ export async function buildPoolBackedModels(existingModels: Record<string, SDKMo
     .filter((account) => account?.enabled !== false);
 
   if (enabledAccounts.length === 0) {
-    return {};
+    return normalizeExistingModels(existingModels);
   }
 
   const candidatesByModel = new Map<string, { account: PoolAccount; liveModel: LiveModel; baseURL: string }>();
@@ -176,6 +176,10 @@ export async function buildPoolBackedModels(existingModels: Record<string, SDKMo
   const existingById = new Map(
     Object.values(existingModels ?? {}).map((model) => [model?.api?.id ?? model?.id, model]),
   );
+
+  if (candidatesByModel.size === 0) {
+    return normalizeExistingModels(existingModels);
+  }
 
   return Object.fromEntries(
     [...candidatesByModel.entries()]
