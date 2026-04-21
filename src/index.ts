@@ -11,6 +11,7 @@ import {
   fetchEntitlement,
   fetchWithSelectedAccount,
   getBaseURL,
+  getCopilotToken,
   getUrls,
   lookupGitHubIdentity,
   resolveSelectedPoolAccount,
@@ -109,7 +110,8 @@ export const CopilotAuthPlugin: Plugin = async (input) => {
             }
 
             const { isVision, isAgent } = getConversationMetadata(init);
-            const headers = buildHeaders(init, auth, isVision, isAgent);
+            const copilotToken = await getCopilotToken(auth);
+            const headers = buildHeaders(init, copilotToken, isVision, isAgent);
             return fetch(inputRequest, {
               ...init,
               headers,

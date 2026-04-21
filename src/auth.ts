@@ -1,4 +1,9 @@
-import { API_VERSION } from "./constants.js";
+import {
+  API_VERSION,
+  COPILOT_TOKEN_EXPIRY_BUFFER_MS,
+  DEFAULT_COPILOT_BASE_URL,
+  VSCODE_HEADERS,
+} from "./constants.js";
 import { getSelectedAccountExpiredError, getSelectedAccountMissingError } from "./errors.js";
 import { readPool, resolveWinnerAccount, writePool } from "./pool.js";
 import { stripRoutingHeaders } from "./routing.js";
@@ -17,7 +22,24 @@ export function getUrls(domain: string) {
     DEVICE_CODE_URL: `https://${domain}/login/device/code`,
     ACCESS_TOKEN_URL: `https://${domain}/login/oauth/access_token`,
     COPILOT_ENTITLEMENT_URL: `https://${apiDomain}/copilot_internal/user`,
+    COPILOT_TOKEN_URL: `https://${apiDomain}/copilot_internal/v2/token`,
   };
+}
+
+type CachedCopilotToken = {
+  token: string;
+  expiresAt: number;
+};
+
+const cachedCopilotTokens = new Map<string, CachedCopilotToken>();
+
+function getCopilotTokenCacheKey(info: AuthInput) {
+  const domain = info.enterpriseUrl ? normalizeDomain(info.enterpriseUrl) : "github.com";
+  return `${domain}:${info.refresh}`;
+}
+
+function isReusableCopilotToken(token: string | undefined, expiresAt: number | undefined, now: number) {
+  return Boolean(token && expiresAt && expiresAt - COPILOT_TOKEN_EXPIRY_BUFFER_MS > now);
 }
 
 export async function lookupGitHubIdentity(accessToken: string, enterpriseUrl?: string) {
@@ -61,7 +83,7 @@ export async function fetchEntitlement(info: AuthInput) {
     headers: {
       Accept: "application/json",
       Authorization: `Bearer ${info.refresh}`,
-      "User-Agent": "GithubCopilot/1.155.0",
+      ...VSCODE_HEADERS,
     },
   });
 
@@ -75,7 +97,50 @@ export async function fetchEntitlement(info: AuthInput) {
 export async function getBaseURL(info: AuthInput) {
   if (info.baseUrl) return info.baseUrl;
   const entitlement = await fetchEntitlement(info);
-  return entitlement?.endpoints?.api;
+  return entitlement?.endpoints?.api ?? DEFAULT_COPILOT_BASE_URL;
+}
+
+export async function getCopilotToken(info: AuthInput, forceRefresh = false) {
+  const now = Date.now();
+
+  if (!forceRefresh && isReusableCopilotToken(info.access, info.expires, now)) {
+    return info.access as string;
+  }
+
+  const cacheKey = getCopilotTokenCacheKey(info);
+  const cachedToken = cachedCopilotTokens.get(cacheKey);
+  if (!forceRefresh && cachedToken && isReusableCopilotToken(cachedToken.token, cachedToken.expiresAt, now)) {
+    return cachedToken.token;
+  }
+
+  const domain = info.enterpriseUrl ? normalizeDomain(info.enterpriseUrl) : "github.com";
+  const urls = getUrls(domain);
+  const response = await fetch(urls.COPILOT_TOKEN_URL, {
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${info.refresh}`,
+      ...VSCODE_HEADERS,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`[opencode-copilot-cli-auth] Copilot token exchange failed: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const token = typeof data?.token === "string" ? data.token : "";
+  const expiresAt = typeof data?.expires_at === "number" ? data.expires_at * 1000 : 0;
+
+  if (!token || !expiresAt) {
+    throw new Error("[opencode-copilot-cli-auth] Copilot token exchange returned an invalid payload.");
+  }
+
+  cachedCopilotTokens.set(cacheKey, {
+    token,
+    expiresAt,
+  });
+
+  return token;
 }
 
 function getHeader(headers: HeaderObject, name: string): string | undefined {
@@ -100,14 +165,13 @@ function getHeader(headers: HeaderObject, name: string): string | undefined {
   return undefined;
 }
 
-export function buildHeaders(init: RequestInit | undefined, info: AuthInput, isVision: boolean, isAgent: boolean) {
+export function buildHeaders(init: RequestInit | undefined, copilotToken: string, isVision: boolean, isAgent: boolean) {
   const explicitInitiator = getHeader(init?.headers, "x-initiator");
   const headers: Record<string, string> = {
     ...normalizeHeaderObject(init?.headers),
-    Authorization: `Bearer ${info.refresh}`,
-    "Copilot-Integration-Id": "copilot-developer-cli",
+    Authorization: `Bearer ${copilotToken}`,
+    ...VSCODE_HEADERS,
     "Openai-Intent": "conversation-agent",
-    "User-Agent": "opencode-copilot-cli-auth/0.0.16",
     "X-GitHub-Api-Version": API_VERSION,
     "X-Initiator": explicitInitiator ?? (isAgent ? "agent" : "user"),
     "X-Interaction-Id": crypto.randomUUID(),
@@ -121,6 +185,7 @@ export function buildHeaders(init: RequestInit | undefined, info: AuthInput, isV
 
   delete headers["x-api-key"];
   delete headers.authorization;
+  delete headers["authorization"];
   delete headers["x-initiator"];
 
   return stripRoutingHeaders(headers);
@@ -231,8 +296,9 @@ export async function fetchWithSelectedAccount(
 ) {
   const { isVision, isAgent } = getConversationMetadata(init);
 
-  const dispatch = async (account: PoolAccount) => {
-    const headers = buildHeaders(init, account.auth, isVision, isAgent);
+  const dispatch = async (account: PoolAccount, forceRefreshToken = false) => {
+    const copilotToken = await getCopilotToken(account.auth, forceRefreshToken);
+    const headers = buildHeaders(init, copilotToken, isVision, isAgent);
     const requestInput = applyBaseURLToRequestInput(input, account.baseUrl);
 
     return fetch(requestInput, {
@@ -252,7 +318,7 @@ export async function fetchWithSelectedAccount(
   }
 
   const refreshedAccount = await refreshSelectedAccountBaseURL(activeAccount.key);
-  const retryResponse = await dispatch(refreshedAccount);
+  const retryResponse = await dispatch(refreshedAccount, true);
   if ([401, 403].includes(retryResponse.status)) {
     throw getSelectedAccountExpiredError(refreshedAccount.key);
   }

@@ -1,17 +1,18 @@
 import type { Model as SDKModel } from "@opencode-ai/sdk/v2";
-import { getBaseURL } from "./auth.js";
+import { getBaseURL, getCopilotToken } from "./auth.js";
+import { API_VERSION, VSCODE_HEADERS } from "./constants.js";
 import { resolveWinnerAccount } from "./pool.js";
 import type { AccountPool, AuthInput, LiveModel, PoolAccount } from "./types.js";
 import { getReleaseDate, isPickerModel, zeroCost } from "./utils.js";
 
 export async function fetchModels(info: AuthInput, baseURL: string): Promise<LiveModel[]> {
+  const copilotToken = await getCopilotToken(info);
   const response = await fetch(`${baseURL}/models`, {
     headers: {
-      Authorization: `Bearer ${info.refresh}`,
-      "Copilot-Integration-Id": "copilot-developer-cli",
+      Authorization: `Bearer ${copilotToken}`,
+      ...VSCODE_HEADERS,
       "Openai-Intent": "model-access",
-      "User-Agent": "opencode-copilot-cli-auth/0.0.16",
-      "X-GitHub-Api-Version": "2025-05-01",
+      "X-GitHub-Api-Version": API_VERSION,
       "X-Interaction-Type": "model-access",
       "X-Request-Id": crypto.randomUUID(),
     },

@@ -123,6 +123,8 @@ export type HeaderObject =
 
 export interface AuthInput {
   refresh: string;
+  access?: string;
+  expires?: number;
   enterpriseUrl?: string | null;
   baseUrl?: string | null;
   type?: string;
