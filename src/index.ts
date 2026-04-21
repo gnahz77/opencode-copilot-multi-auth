@@ -11,6 +11,7 @@ import {
   fetchEntitlement,
   fetchWithSelectedAccount,
   getBaseURL,
+  getCopilotToken,
   getUrls,
   lookupGitHubIdentity,
   resolveSelectedPoolAccount,
@@ -26,6 +27,7 @@ import {
 } from "./pool.js";
 import { injectRoutingHeaders, stripRoutingHeaders } from "./routing.js";
 import {
+  applyBaseURLToRequestInput,
   getHeader,
   getConversationMetadata,
   getRequestedRawModelId,
@@ -107,10 +109,12 @@ export const CopilotAuthPlugin: Plugin = async (input) => {
             if (!auth || auth.type !== "oauth") {
               return fetch(inputRequest, init);
             }
-
+            
             const { isVision, isAgent } = getConversationMetadata(init);
-            const headers = buildHeaders(init, auth, isVision, isAgent);
-            return fetch(inputRequest, {
+            const copilotToken = await getCopilotToken(auth);
+            const headers = buildHeaders(init, copilotToken, isVision, isAgent);
+            const requestInput = applyBaseURLToRequestInput(inputRequest, baseURL);
+            return fetch(requestInput, {
               ...init,
               headers,
             });
