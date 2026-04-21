@@ -44,6 +44,23 @@ export function normalizeList(value: unknown): string[] {
   return Array.isArray(value) ? value : [];
 }
 
+function escapeRegex(value: string): string {
+  return value.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
+}
+
+export function matchesModelIdPattern(pattern: unknown, rawModelId: string): boolean {
+  if (typeof pattern !== "string") {
+    return false;
+  }
+
+  const matcher = new RegExp(`^${escapeRegex(pattern).replaceAll("*", ".*")}$`);
+  return matcher.test(rawModelId);
+}
+
+export function matchesAnyModelIdPattern(patterns: unknown, rawModelId: string): boolean {
+  return normalizeList(patterns).some((pattern) => matchesModelIdPattern(pattern, rawModelId));
+}
+
 export function normalizePriority(value: unknown): number {
   return Number.isInteger(value) ? (value as number) : 0;
 }

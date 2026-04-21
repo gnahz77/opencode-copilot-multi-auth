@@ -24,6 +24,7 @@ import {
   upsertAccount,
   writePool,
 } from "./pool.js";
+import { injectRoutingHeaders, stripRoutingHeaders } from "./routing.js";
 import {
   getHeader,
   getConversationMetadata,
@@ -34,6 +35,7 @@ import {
 import type { PoolAccount } from "./types.js";
 
 export { getPoolPath, readPool, writePool, deriveAccountKey, lookupGitHubIdentity, upsertAccount, resolveWinnerAccount };
+export { injectRoutingHeaders, stripRoutingHeaders };
 
 export const CopilotAuthPlugin: Plugin = async (input) => {
   return {

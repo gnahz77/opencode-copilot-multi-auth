@@ -59,6 +59,10 @@ function runReadmeCheck() {
     failScenario("readme-docs-updated", `missing ${missing}`);
   }
 
+  if (!readme.includes("wildcard") || !readme.includes("claude-*")) {
+    failScenario("readme-docs-updated", "missing wildcard allowlist/blocklist documentation");
+  }
+
   process.stdout.write("PASS readme-docs-updated\n");
 }
 
@@ -308,8 +312,8 @@ function runResolution() {
   };
 
   const claudeWinner = resolveWinnerAccount("claude-sonnet-4.6", pool);
-  if (claudeWinner?.key !== "github.com-work") {
-    throw new Error(`Expected github.com-work to win claude-sonnet-4.6, got ${claudeWinner?.key ?? "null"}`);
+  if (claudeWinner?.key !== "github.com-personal") {
+    throw new Error(`Expected github.com-personal to win claude-sonnet-4.6, got ${claudeWinner?.key ?? "null"}`);
   }
 
   const gptWinner = resolveWinnerAccount("gpt-4.1", pool);
@@ -321,16 +325,16 @@ function runResolution() {
     version: 1,
     accounts: [
       {
-        key: "allowlist-only-high-priority",
+        key: "allowlist-only-low-priority",
         enabled: true,
-        priority: 1000,
+        priority: 0,
         allowlist: ["claude-sonnet-4.6"],
         blocklist: [],
       },
       {
         key: "fallback-account",
         enabled: true,
-        priority: 1,
+        priority: 100,
         allowlist: [],
         blocklist: [],
       },
@@ -339,7 +343,7 @@ function runResolution() {
 
   if (allowlistRestrictedWinner?.key !== "fallback-account") {
     throw new Error(
-      `Expected fallback-account when higher-priority account allowlist excludes gpt-4.1, got ${allowlistRestrictedWinner?.key ?? "null"}`,
+        `Expected fallback-account when lower-priority account allowlist excludes gpt-4.1, got ${allowlistRestrictedWinner?.key ?? "null"}`,
     );
   }
 
@@ -391,9 +395,116 @@ function runResolution() {
     throw new Error(`Expected null when all accounts are filtered out, got ${JSON.stringify(noWinner)}`);
   }
 
-  process.stdout.write("PASS resolution-work-wins-for-claude-sonnet-4.6\n");
+  const wildcardAllowlistWinner = resolveWinnerAccount("claude-opus-4.6", {
+    version: 1,
+    accounts: [
+      {
+        key: "wildcard-claude",
+        enabled: true,
+        priority: 0,
+        allowlist: ["claude-*"],
+        blocklist: [],
+      },
+      {
+        key: "fallback-account",
+        enabled: true,
+        priority: 100,
+        allowlist: [],
+        blocklist: [],
+      },
+    ],
+  });
+
+  if (wildcardAllowlistWinner?.key !== "wildcard-claude") {
+    throw new Error(
+      `Expected wildcard-claude to win claude-opus-4.6 via allowlist wildcard, got ${wildcardAllowlistWinner?.key ?? "null"}`,
+    );
+  }
+
+  const wildcardAllowlistExcludedWinner = resolveWinnerAccount("gpt-4.1", {
+    version: 1,
+    accounts: [
+      {
+        key: "wildcard-claude",
+        enabled: true,
+        priority: 0,
+        allowlist: ["claude-*"],
+        blocklist: [],
+      },
+      {
+        key: "fallback-account",
+        enabled: true,
+        priority: 100,
+        allowlist: [],
+        blocklist: [],
+      },
+    ],
+  });
+
+  if (wildcardAllowlistExcludedWinner?.key !== "fallback-account") {
+    throw new Error(
+      `Expected fallback-account when wildcard allowlist excludes gpt-4.1, got ${wildcardAllowlistExcludedWinner?.key ?? "null"}`,
+    );
+  }
+
+  const wildcardBlocklistWinner = resolveWinnerAccount("claude-opus-4.6", {
+    version: 1,
+    accounts: [
+      {
+        key: "wildcard-blocked",
+        enabled: true,
+        priority: 0,
+        allowlist: [],
+        blocklist: ["claude-*"],
+      },
+      {
+        key: "fallback-account",
+        enabled: true,
+        priority: 100,
+        allowlist: [],
+        blocklist: [],
+      },
+    ],
+  });
+
+  if (wildcardBlocklistWinner?.key !== "fallback-account") {
+    throw new Error(
+      `Expected fallback-account when wildcard blocklist excludes claude-opus-4.6, got ${wildcardBlocklistWinner?.key ?? "null"}`,
+    );
+  }
+
+  const wildcardAllowlistThenBlocklistWinner = resolveWinnerAccount("claude-opus-4.6", {
+    version: 1,
+    accounts: [
+      {
+        key: "wildcard-allow-then-block",
+        enabled: true,
+        priority: 0,
+        allowlist: ["claude-*"],
+        blocklist: ["claude-opus-*"] ,
+      },
+      {
+        key: "fallback-account",
+        enabled: true,
+        priority: 100,
+        allowlist: [],
+        blocklist: [],
+      },
+    ],
+  });
+
+  if (wildcardAllowlistThenBlocklistWinner?.key !== "fallback-account") {
+    throw new Error(
+      `Expected fallback-account when blocklist wildcard overrides allowlist wildcard for claude-opus-4.6, got ${wildcardAllowlistThenBlocklistWinner?.key ?? "null"}`,
+    );
+  }
+
+  process.stdout.write("PASS resolution-lower-priority-wins-for-claude-sonnet-4.6\n");
   process.stdout.write("PASS non-empty-allowlist-restricts-account\n");
   process.stdout.write("PASS priority-tie-breaker-key-order\n");
+  process.stdout.write("PASS wildcard-allowlist-matches-raw-model-id\n");
+  process.stdout.write("PASS wildcard-blocklist-excludes-raw-model-id\n");
+  process.stdout.write("PASS wildcard-allowlist-then-blocklist-order\n");
 }
 
 function runModels() {
@@ -432,7 +543,7 @@ function runModels() {
 
   const mockLiveModelsByAccount = {
     "github.com-work": ["claude-sonnet-4.6", "gpt-4.1"],
-    "github.com-personal": ["gpt-4.1", "claude-opus-4.6"],
+    "github.com-personal": ["claude-sonnet-4.6", "gpt-4.1", "claude-opus-4.6"],
     "github.com-disabled": ["claude-sonnet-4.6", "gpt-4.1", "claude-opus-4.6"],
   };
 
@@ -449,8 +560,8 @@ function runModels() {
   }
 
   const claudeWinner = resolveWinnerAccount("claude-sonnet-4.6", pool);
-  if (claudeWinner?.id !== "github.com-work") {
-    throw new Error(`Expected github.com-work to win claude-sonnet-4.6, got ${claudeWinner?.id ?? "null"}`);
+  if (claudeWinner?.id !== "github.com-personal") {
+    throw new Error(`Expected github.com-personal to win claude-sonnet-4.6, got ${claudeWinner?.id ?? "null"}`);
   }
 
   const gptWinner = resolveWinnerAccount("gpt-4.1", pool);
@@ -469,10 +580,45 @@ function runModels() {
     throw new Error(`Expected unique raw model ids, got ${JSON.stringify(keys)}`);
   }
 
+  const wildcardPool = {
+    version: 1,
+    accounts: [
+      {
+        id: "wildcard-work",
+        key: "wildcard-work",
+        deployment: "github.com",
+        enabled: true,
+        priority: 0,
+        allowlist: ["claude-*"],
+        blocklist: ["claude-opus-*"] ,
+      },
+      {
+        id: "fallback",
+        key: "fallback",
+        deployment: "github.com",
+        enabled: true,
+        priority: 100,
+        allowlist: [],
+        blocklist: [],
+      },
+    ],
+  };
+
+  const wildcardSonnetWinner = resolveWinnerAccount("claude-sonnet-4.6", wildcardPool);
+  if (wildcardSonnetWinner?.id !== "wildcard-work") {
+    throw new Error(`Expected wildcard-work to win claude-sonnet-4.6, got ${wildcardSonnetWinner?.id ?? "null"}`);
+  }
+
+  const wildcardOpusWinner = resolveWinnerAccount("claude-opus-4.6", wildcardPool);
+  if (wildcardOpusWinner?.id !== "fallback") {
+    throw new Error(`Expected fallback to win claude-opus-4.6, got ${wildcardOpusWinner?.id ?? "null"}`);
+  }
+
   process.stdout.write(`PASS has claude-sonnet-4.6 winner=${claudeWinner.id}\n`);
   process.stdout.write(`PASS has gpt-4.1 winner=${gptWinner.id}\n`);
   process.stdout.write("PASS missing claude-opus-4.6 blocked\n");
   process.stdout.write("PASS unique-raw-model-ids\n");
+  process.stdout.write("PASS wildcard-model-winner-selection\n");
 }
 
 function runModelOrder() {
@@ -689,7 +835,7 @@ async function runIsolateFailure() {
         key: "github.com:1111",
         deployment: "github.com",
         enabled: true,
-        priority: 100,
+        priority: 0,
         allowlist: ["gpt-4.1"],
         blocklist: [],
         baseUrl: "https://healthy.example.com",
@@ -955,7 +1101,7 @@ function runRoute() {
         deployment: "github.com",
         enabled: true,
         priority: 100,
-        allowlist: ["claude-sonnet-4.6"],
+        allowlist: ["claude-*"],
         blocklist: [],
         baseUrl: "https://api.githubcopilot.com",
         auth: {
@@ -969,7 +1115,7 @@ function runRoute() {
         deployment: "github.com",
         enabled: true,
         priority: 50,
-        allowlist: ["gpt-4.1"],
+        allowlist: ["gpt-*"],
         blocklist: [],
         baseUrl: "https://api.githubcopilot.com",
         auth: {
