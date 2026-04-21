@@ -3,7 +3,14 @@ import { homedir } from "os";
 import { dirname } from "path";
 import { ACCOUNT_POOL_SCHEMA_VERSION } from "./constants.js";
 import type { AccountPool, OAuthAuth, PoolAccount, PoolIdentity, UpsertAccountData } from "./types.js";
-import { normalizeDomain, normalizeIdSource, normalizeList, normalizePriority, preserveStringOrDefault } from "./utils.js";
+import {
+  matchesAnyModelIdPattern,
+  normalizeDomain,
+  normalizeIdSource,
+  normalizeList,
+  normalizePriority,
+  preserveStringOrDefault,
+} from "./utils.js";
 
 export function getPoolPath() {
   return `${homedir()}/.local/share/opencode/copilot-auth.json`;
@@ -178,12 +185,12 @@ export function upsertAccount(pool: AccountPool, accountData: UpsertAccountData)
 export function resolveWinnerAccount(rawModelId: string, pool: AccountPool) {
   const canAccountServeModel = (account: PoolAccount) => {
     const allowlist = normalizeList(account?.allowlist);
-    if (allowlist.length > 0 && !allowlist.includes(rawModelId)) {
+    if (allowlist.length > 0 && !matchesAnyModelIdPattern(allowlist, rawModelId)) {
       return false;
     }
 
     const blocklist = normalizeList(account?.blocklist);
-    return !blocklist.includes(rawModelId);
+    return !matchesAnyModelIdPattern(blocklist, rawModelId);
   };
 
   const candidates = (Array.isArray(pool?.accounts) ? pool.accounts : [])
