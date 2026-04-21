@@ -308,8 +308,8 @@ function runResolution() {
   };
 
   const claudeWinner = resolveWinnerAccount("claude-sonnet-4.6", pool);
-  if (claudeWinner?.key !== "github.com-work") {
-    throw new Error(`Expected github.com-work to win claude-sonnet-4.6, got ${claudeWinner?.key ?? "null"}`);
+  if (claudeWinner?.key !== "github.com-personal") {
+    throw new Error(`Expected github.com-personal to win claude-sonnet-4.6, got ${claudeWinner?.key ?? "null"}`);
   }
 
   const gptWinner = resolveWinnerAccount("gpt-4.1", pool);
@@ -321,16 +321,16 @@ function runResolution() {
     version: 1,
     accounts: [
       {
-        key: "allowlist-only-high-priority",
+        key: "allowlist-only-low-priority",
         enabled: true,
-        priority: 1000,
+        priority: 0,
         allowlist: ["claude-sonnet-4.6"],
         blocklist: [],
       },
       {
         key: "fallback-account",
         enabled: true,
-        priority: 1,
+        priority: 100,
         allowlist: [],
         blocklist: [],
       },
@@ -339,7 +339,7 @@ function runResolution() {
 
   if (allowlistRestrictedWinner?.key !== "fallback-account") {
     throw new Error(
-      `Expected fallback-account when higher-priority account allowlist excludes gpt-4.1, got ${allowlistRestrictedWinner?.key ?? "null"}`,
+        `Expected fallback-account when lower-priority account allowlist excludes gpt-4.1, got ${allowlistRestrictedWinner?.key ?? "null"}`,
     );
   }
 
@@ -391,7 +391,7 @@ function runResolution() {
     throw new Error(`Expected null when all accounts are filtered out, got ${JSON.stringify(noWinner)}`);
   }
 
-  process.stdout.write("PASS resolution-work-wins-for-claude-sonnet-4.6\n");
+  process.stdout.write("PASS resolution-lower-priority-wins-for-claude-sonnet-4.6\n");
   process.stdout.write("PASS non-empty-allowlist-restricts-account\n");
   process.stdout.write("PASS priority-tie-breaker-key-order\n");
 }
@@ -432,7 +432,7 @@ function runModels() {
 
   const mockLiveModelsByAccount = {
     "github.com-work": ["claude-sonnet-4.6", "gpt-4.1"],
-    "github.com-personal": ["gpt-4.1", "claude-opus-4.6"],
+    "github.com-personal": ["claude-sonnet-4.6", "gpt-4.1", "claude-opus-4.6"],
     "github.com-disabled": ["claude-sonnet-4.6", "gpt-4.1", "claude-opus-4.6"],
   };
 
@@ -449,8 +449,8 @@ function runModels() {
   }
 
   const claudeWinner = resolveWinnerAccount("claude-sonnet-4.6", pool);
-  if (claudeWinner?.id !== "github.com-work") {
-    throw new Error(`Expected github.com-work to win claude-sonnet-4.6, got ${claudeWinner?.id ?? "null"}`);
+  if (claudeWinner?.id !== "github.com-personal") {
+    throw new Error(`Expected github.com-personal to win claude-sonnet-4.6, got ${claudeWinner?.id ?? "null"}`);
   }
 
   const gptWinner = resolveWinnerAccount("gpt-4.1", pool);
@@ -689,7 +689,7 @@ async function runIsolateFailure() {
         key: "github.com:1111",
         deployment: "github.com",
         enabled: true,
-        priority: 100,
+        priority: 0,
         allowlist: ["gpt-4.1"],
         blocklist: [],
         baseUrl: "https://healthy.example.com",

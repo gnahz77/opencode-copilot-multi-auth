@@ -157,11 +157,11 @@ The pool stores one object per account under `accounts` in a `version: 1` docume
 | `id` | Stable human-friendly identifier stored with the account record. |
 | `name` | Display name for the account. |
 | `enabled` | Whether the account can participate in automatic routing. Disabled accounts stay stored but are ignored for winner selection. |
-| `priority` | Higher values win when multiple enabled accounts can serve the same raw model ID. |
+| `priority` | Lower values win when multiple enabled accounts can serve the same raw model ID. |
 | `allowlist` | Exact raw model IDs this account is allowed to serve. If non-empty, the account can only serve models listed here. |
 | `blocklist` | Exact raw model IDs this account must never serve. If both `allowlist` and `blocklist` are non-empty, the plugin checks `allowlist` first and then applies `blocklist`. |
 
-Automatic routing works on the raw Copilot model IDs that `opencode` already uses. The plugin filters eligible accounts by `enabled`, then checks `allowlist` first (when non-empty, the model must be listed there), then applies `blocklist`, and finally picks exactly one winning account by highest `priority` (with a stable key-based tie-breaker). The model ID itself is not rewritten, so account identity does not appear in model IDs.
+Automatic routing works on the raw Copilot model IDs that `opencode` already uses. The plugin filters eligible accounts by `enabled`, then checks `allowlist` first (when non-empty, the model must be listed there), then applies `blocklist`, and finally picks exactly one winning account by lowest `priority` (with a stable key-based tie-breaker). The model ID itself is not rewritten, so account identity does not appear in model IDs.
 
 Example pool file:
 

@@ -190,7 +190,7 @@ export function resolveWinnerAccount(rawModelId: string, pool: AccountPool) {
     .filter((account) => account?.enabled !== false)
     .filter(canAccountServeModel)
     .sort((left, right) => {
-      const priorityDelta = normalizePriority(right?.priority) - normalizePriority(left?.priority);
+      const priorityDelta = normalizePriority(left?.priority) - normalizePriority(right?.priority);
       if (priorityDelta !== 0) {
         return priorityDelta;
       }
