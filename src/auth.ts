@@ -5,7 +5,7 @@ import {
   VSCODE_HEADERS,
 } from "./constants.js";
 import { getSelectedAccountExpiredError, getSelectedAccountMissingError } from "./errors.js";
-import { readPool, resolveWinnerAccount, writePool } from "./pool.js";
+import { readPool, resolveWinnerAccount, writePoolAuthData } from "./pool.js";
 import { stripRoutingHeaders } from "./routing.js";
 import type { AccountPool, AuthInput, HeaderObject, PoolAccount } from "./types.js";
 import {
@@ -285,7 +285,7 @@ export async function refreshSelectedAccountBaseURL(accountKey: string) {
     ),
   };
 
-  writePool(updatedPool);
+  writePoolAuthData(updatedPool);
   return updatedPool.accounts[accountIndex];
 }
 

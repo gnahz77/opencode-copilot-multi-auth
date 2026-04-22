@@ -6,16 +6,18 @@ import { dirname, join } from "path";
 const scenario = process.argv[2];
 
 if (!scenario) {
-  throw new Error("Usage: node ./test/verify-multi-account.mjs <schema-init|malformed-json|perms|dedupe|dedupe-domains|display-name-routing|resolution|models|model-order|strip-routing-headers|append-update|migrate-legacy|route|isolate-failure|disabled-route|stale-baseurl|all|readme-check>");
+  throw new Error("Usage: node ./test/verify-multi-account.mjs <schema-init|malformed-json|perms|dedupe|dedupe-domains|display-name-routing|resolution|models|model-order|strip-routing-headers|append-update|migrate-legacy|migration-version-guard|route|isolate-failure|disabled-route|stale-baseurl|all|readme-check>");
 }
 
 const {
+  getPolicyPath,
   getPoolPath,
   readPool,
   writePool,
   deriveAccountKey,
   upsertAccount,
   resolveWinnerAccount,
+  migrateLegacyPoolStorageIfNeeded,
   injectRoutingHeaders,
   stripRoutingHeaders,
   CopilotAuthPlugin,
@@ -23,6 +25,8 @@ const {
 
 const ROUTING_ACCOUNT_KEY_HEADER = "x-opencode-copilot-account-key";
 const README_PATH = new URL("../README.md", import.meta.url);
+const CURRENT_SCHEMA_VERSION = 2;
+const LEGACY_SCHEMA_VERSION = 1;
 
 function failScenario(name, message) {
   process.stdout.write(`FAIL ${name}: ${message}\n`);
@@ -33,10 +37,52 @@ function ensureParentDirectory(path) {
   mkdirSync(dirname(path), { recursive: true });
 }
 
+function readJson(path) {
+  return JSON.parse(readFileSync(path, "utf8"));
+}
+
+function makeStoredAccount({
+  id,
+  key,
+  login,
+  userId,
+  enabled,
+  priority,
+  allowlist,
+  blocklist,
+  baseUrl,
+  refresh,
+}) {
+  const timestamp = "2026-04-01T00:00:00.000Z";
+  return {
+    id,
+    name: id,
+    key,
+    deployment: "github.com",
+    domain: "github.com",
+    identity: {
+      login,
+      userId,
+    },
+    enterpriseUrl: null,
+    enabled,
+    priority,
+    allowlist,
+    blocklist,
+    baseUrl,
+    auth: {
+      type: "oauth",
+      refresh,
+    },
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+}
+
 function runSchemaInit() {
   const pool = readPool();
-  if (pool.version !== 1) {
-    throw new Error(`Expected version=1, got version=${pool.version}`);
+  if (pool.version !== CURRENT_SCHEMA_VERSION) {
+    throw new Error(`Expected version=${CURRENT_SCHEMA_VERSION}, got version=${pool.version}`);
   }
   if (!Array.isArray(pool.accounts) || pool.accounts.length !== 0) {
     throw new Error(`Expected empty accounts array, got ${JSON.stringify(pool.accounts)}`);
@@ -45,7 +91,7 @@ function runSchemaInit() {
   if (!fileCreated) {
     throw new Error("Expected readPool() to create pool file on disk, but file not found");
   }
-  process.stdout.write("PASS schema-init version=1\n");
+  process.stdout.write(`PASS schema-init version=${CURRENT_SCHEMA_VERSION}\n`);
   process.stdout.write("PASS schema-init accounts=0\n");
   process.stdout.write(`PASS schema-init file-created=${String(fileCreated)}\n`);
 }
@@ -69,7 +115,7 @@ function runReadmeCheck() {
 function runMalformedJson() {
   const poolPath = getPoolPath();
   ensureParentDirectory(poolPath);
-  const malformed = "{\n  \"version\": 1,\n  \"accounts\": [\n";
+  const malformed = `{"\n  \"version\": ${CURRENT_SCHEMA_VERSION},\n  \"accounts\": [\n`.replace("{\"", "{");
   writeFileSync(poolPath, malformed, "utf8");
 
   let blocked = false;
@@ -95,7 +141,7 @@ function runMalformedJson() {
 function runPerms() {
   const poolPath = getPoolPath();
   const payload = {
-    version: 1,
+    version: CURRENT_SCHEMA_VERSION,
     accounts: [],
   };
 
@@ -122,7 +168,7 @@ function runDedupe() {
 
   const inserted = upsertAccount(
     {
-      version: 1,
+      version: CURRENT_SCHEMA_VERSION,
       accounts: [],
     },
     {
@@ -177,7 +223,7 @@ function runDedupeDomains() {
   };
 
   let pool = {
-    version: 1,
+    version: CURRENT_SCHEMA_VERSION,
     accounts: [],
   };
 
@@ -219,7 +265,7 @@ function runDisplayNameRouting() {
   const key = deriveAccountKey("github.com", userId);
   const first = upsertAccount(
     {
-      version: 1,
+      version: CURRENT_SCHEMA_VERSION,
       accounts: [],
     },
     {
@@ -274,7 +320,7 @@ function runDisplayNameRouting() {
 
 function runResolution() {
   const pool = {
-    version: 1,
+    version: CURRENT_SCHEMA_VERSION,
     accounts: [
       {
         key: "github.com-work",
@@ -322,7 +368,7 @@ function runResolution() {
   }
 
   const allowlistRestrictedWinner = resolveWinnerAccount("gpt-4.1", {
-    version: 1,
+    version: CURRENT_SCHEMA_VERSION,
     accounts: [
       {
         key: "allowlist-only-low-priority",
@@ -348,7 +394,7 @@ function runResolution() {
   }
 
   const tieWinner = resolveWinnerAccount("any-model", {
-    version: 1,
+    version: CURRENT_SCHEMA_VERSION,
     accounts: [
       {
         key: "zeta-account",
@@ -372,7 +418,7 @@ function runResolution() {
   }
 
   const noWinner = resolveWinnerAccount("blocked-only-model", {
-    version: 1,
+    version: CURRENT_SCHEMA_VERSION,
     accounts: [
       {
         key: "blocked",
@@ -396,7 +442,7 @@ function runResolution() {
   }
 
   const wildcardAllowlistWinner = resolveWinnerAccount("claude-opus-4.6", {
-    version: 1,
+    version: CURRENT_SCHEMA_VERSION,
     accounts: [
       {
         key: "wildcard-claude",
@@ -422,7 +468,7 @@ function runResolution() {
   }
 
   const wildcardAllowlistExcludedWinner = resolveWinnerAccount("gpt-4.1", {
-    version: 1,
+    version: CURRENT_SCHEMA_VERSION,
     accounts: [
       {
         key: "wildcard-claude",
@@ -448,7 +494,7 @@ function runResolution() {
   }
 
   const wildcardBlocklistWinner = resolveWinnerAccount("claude-opus-4.6", {
-    version: 1,
+    version: CURRENT_SCHEMA_VERSION,
     accounts: [
       {
         key: "wildcard-blocked",
@@ -474,7 +520,7 @@ function runResolution() {
   }
 
   const wildcardAllowlistThenBlocklistWinner = resolveWinnerAccount("claude-opus-4.6", {
-    version: 1,
+    version: CURRENT_SCHEMA_VERSION,
     accounts: [
       {
         key: "wildcard-allow-then-block",
@@ -509,7 +555,7 @@ function runResolution() {
 
 function runModels() {
   const pool = {
-    version: 1,
+    version: CURRENT_SCHEMA_VERSION,
     accounts: [
       {
         id: "github.com-work",
@@ -581,7 +627,7 @@ function runModels() {
   }
 
   const wildcardPool = {
-    version: 1,
+    version: CURRENT_SCHEMA_VERSION,
     accounts: [
       {
         id: "wildcard-work",
@@ -674,7 +720,7 @@ function runAppendUpdate() {
   };
 
   let pool = {
-    version: 1,
+    version: CURRENT_SCHEMA_VERSION,
     accounts: [],
   };
 
@@ -743,7 +789,7 @@ function runAppendUpdate() {
 
 function runMigrateLegacy() {
   let pool = {
-    version: 1,
+    version: CURRENT_SCHEMA_VERSION,
     accounts: [],
   };
 
@@ -778,6 +824,113 @@ function runMigrateLegacy() {
 
   process.stdout.write("PASS migrate-legacy-auth count=1\n");
   process.stdout.write(`PASS migrate-preserved-provider=${String(providerPreserved)}\n`);
+}
+
+function runMigrationVersionGuard() {
+  const authPath = getPoolPath();
+  const policyPath = getPolicyPath();
+
+  ensureParentDirectory(authPath);
+  ensureParentDirectory(policyPath);
+
+  const legacyAuth = {
+    version: LEGACY_SCHEMA_VERSION,
+    accounts: [
+      {
+        key: "github.com:1111",
+        id: "legacy-work",
+        name: "Legacy Work",
+        enabled: false,
+        priority: 7,
+        deployment: "github.com",
+        domain: "github.com",
+        identity: {
+          login: "legacy-user",
+          userId: 1111,
+        },
+        enterpriseUrl: null,
+        baseUrl: "https://api.githubcopilot.com",
+        allowlist: ["claude-*"],
+        blocklist: ["claude-opus-*"],
+        auth: {
+          type: "oauth",
+          refresh: "legacy-refresh",
+        },
+        createdAt: "2026-04-01T00:00:00.000Z",
+        updatedAt: "2026-04-01T00:00:00.000Z",
+      },
+    ],
+  };
+
+  writeFileSync(authPath, `${JSON.stringify(legacyAuth, null, 2)}\n`, "utf8");
+  migrateLegacyPoolStorageIfNeeded();
+
+  const migratedAuth = readJson(authPath);
+  const migratedPolicy = readJson(policyPath);
+
+  if (migratedAuth.version !== CURRENT_SCHEMA_VERSION) {
+    throw new Error(`Expected migrated auth version=${CURRENT_SCHEMA_VERSION}, got ${migratedAuth.version}`);
+  }
+  if (migratedPolicy.version !== CURRENT_SCHEMA_VERSION) {
+    throw new Error(`Expected migrated policy version=${CURRENT_SCHEMA_VERSION}, got ${migratedPolicy.version}`);
+  }
+  if (Object.prototype.hasOwnProperty.call(migratedAuth.accounts[0] ?? {}, "enabled")) {
+    throw new Error("Expected migrated auth file to drop legacy routing fields");
+  }
+  if (migratedPolicy.accounts[0]?.enabled !== false || migratedPolicy.accounts[0]?.priority !== 7) {
+    throw new Error("Expected migrated policy file to preserve legacy routing values");
+  }
+
+  const currentAuth = {
+    version: CURRENT_SCHEMA_VERSION,
+    accounts: [
+      {
+        key: "github.com:1111",
+        deployment: "github.com",
+        domain: "github.com",
+        identity: {
+          login: "legacy-user",
+          userId: 1111,
+        },
+        enterpriseUrl: null,
+        baseUrl: "https://api.githubcopilot.com",
+        auth: {
+          type: "oauth",
+          refresh: "current-refresh",
+        },
+        createdAt: "2026-04-02T00:00:00.000Z",
+        updatedAt: "2026-04-02T00:00:00.000Z",
+      },
+    ],
+  };
+  const currentPolicy = {
+    version: CURRENT_SCHEMA_VERSION,
+    accounts: [
+      {
+        key: "github.com:1111",
+        enabled: true,
+        priority: 3,
+        allowlist: ["gpt-*"],
+        blocklist: [],
+      },
+    ],
+  };
+
+  writeFileSync(authPath, `${JSON.stringify(currentAuth, null, 2)}\n`, "utf8");
+  writeFileSync(policyPath, `${JSON.stringify(currentPolicy, null, 2)}\n`, "utf8");
+
+  const authBefore = readFileSync(authPath, "utf8");
+  const policyBefore = readFileSync(policyPath, "utf8");
+  migrateLegacyPoolStorageIfNeeded();
+  const authAfter = readFileSync(authPath, "utf8");
+  const policyAfter = readFileSync(policyPath, "utf8");
+
+  if (authAfter !== authBefore || policyAfter !== policyBefore) {
+    throw new Error("Expected version=2 split files to remain unchanged during migration guard");
+  }
+
+  process.stdout.write("PASS migrate-version-1-only\n");
+  process.stdout.write("PASS skip-migrate-version-2\n");
 }
 
 function getArgValue(flag) {
@@ -828,44 +981,58 @@ async function createPlugin() {
 
 async function runIsolateFailure() {
   const pool = {
-    version: 1,
+    version: CURRENT_SCHEMA_VERSION,
     accounts: [
-      {
+      makeStoredAccount({
         id: "github.com-work",
         key: "github.com:1111",
-        deployment: "github.com",
+        login: "healthy-user",
+        userId: 1111,
         enabled: true,
         priority: 0,
         allowlist: ["gpt-4.1"],
         blocklist: [],
         baseUrl: "https://healthy.example.com",
-        auth: {
-          type: "oauth",
-          refresh: "token-healthy",
-        },
-      },
-      {
+        refresh: "token-healthy",
+      }),
+      makeStoredAccount({
         id: "github.com-broken",
         key: "github.com:2222",
-        deployment: "github.com",
+        login: "broken-user",
+        userId: 2222,
         enabled: true,
         priority: 50,
         allowlist: ["gpt-4.1"],
         blocklist: [],
         baseUrl: "https://broken.example.com",
-        auth: {
-          type: "oauth",
-          refresh: "token-broken",
-        },
-      },
+        refresh: "token-broken",
+      }),
     ],
   };
 
   writePool(pool);
 
   let skippedAccounts = 0;
-  const models = await withMockFetch(async (input) => {
+  const models = await withMockFetch(async (input, init) => {
     const url = String(input);
+    const authorization = getHeaderCaseInsensitive(init?.headers, "authorization");
+
+    if (url === "https://api.github.com/copilot_internal/v2/token") {
+      if (authorization === "Bearer token-healthy") {
+        return createJsonResponse(200, {
+          token: "copilot-token-healthy",
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+        });
+      }
+      if (authorization === "Bearer token-broken") {
+        return createJsonResponse(200, {
+          token: "copilot-token-broken",
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+        });
+      }
+      throw new Error(`Unexpected token authorization in isolate-failure: ${authorization ?? "undefined"}`);
+    }
+
     if (url === "https://healthy.example.com/models") {
       return createJsonResponse(200, {
         data: [
@@ -927,22 +1094,20 @@ async function runIsolateFailure() {
 
 async function runDisabledRoute() {
   const pool = {
-    version: 1,
+    version: CURRENT_SCHEMA_VERSION,
     accounts: [
-      {
+      makeStoredAccount({
         id: "github.com-disabled",
         key: "github.com:1111",
-        deployment: "github.com",
+        login: "disabled-user",
+        userId: 1111,
         enabled: false,
         priority: 100,
         allowlist: ["claude-sonnet-4.6"],
         blocklist: [],
         baseUrl: "https://api.githubcopilot.com",
-        auth: {
-          type: "oauth",
-          refresh: "token-disabled",
-        },
-      },
+        refresh: "token-disabled",
+      }),
     ],
   };
 
@@ -995,22 +1160,20 @@ async function runStaleBaseUrl() {
   const staleBaseUrl = "https://stale.example.com";
   const freshBaseUrl = "https://fresh.example.com";
   const pool = {
-    version: 1,
+    version: CURRENT_SCHEMA_VERSION,
     accounts: [
-      {
+      makeStoredAccount({
         id: "github.com-work",
         key: selectedKey,
-        deployment: "github.com",
+        login: "selected-user",
+        userId: 1111,
         enabled: true,
         priority: 100,
         allowlist: ["gpt-4.1"],
         blocklist: [],
         baseUrl: staleBaseUrl,
-        auth: {
-          type: "oauth",
-          refresh: "selected-refresh-token",
-        },
-      },
+        refresh: "selected-refresh-token",
+      }),
     ],
   };
 
@@ -1019,10 +1182,21 @@ async function runStaleBaseUrl() {
   const fetchLog = [];
   const response = await withMockFetch(async (input, init) => {
     const url = String(input);
+    const authorization = getHeaderCaseInsensitive(init?.headers, "authorization");
     fetchLog.push({
       url,
-      authorization: getHeaderCaseInsensitive(init?.headers, "authorization"),
+      authorization,
     });
+
+    if (url === "https://api.github.com/copilot_internal/v2/token") {
+      if (authorization !== "Bearer selected-refresh-token") {
+        throw new Error(`Expected selected account token exchange auth, got ${authorization ?? "undefined"}`);
+      }
+      return createJsonResponse(200, {
+        token: "copilot-access-token",
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+      });
+    }
 
     if (url === `${staleBaseUrl}/chat/completions`) {
       return createJsonResponse(401, { error: "stale" });
@@ -1093,7 +1267,7 @@ function runRoute() {
   }
 
   const pool = {
-    version: 1,
+    version: CURRENT_SCHEMA_VERSION,
     accounts: [
       {
         id: "github.com-work",
@@ -1171,6 +1345,7 @@ function runAllScenarios() {
     ["strip-routing-headers"],
     ["append-update"],
     ["migrate-legacy"],
+    ["migration-version-guard"],
     ["models"],
     ["model-order"],
     ["route", "--model", "claude-sonnet-4.6"],
@@ -1241,6 +1416,9 @@ switch (scenario) {
     break;
   case "migrate-legacy":
     runMigrateLegacy();
+    break;
+  case "migration-version-guard":
+    runMigrationVersionGuard();
     break;
   case "route":
     runRoute();

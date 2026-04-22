@@ -31,6 +31,26 @@ export interface PoolAccount {
   updatedAt: string;
 }
 
+export interface AuthPoolAccount {
+  key: string;
+  deployment: string;
+  domain: string;
+  identity: PoolIdentity;
+  enterpriseUrl: string | null;
+  baseUrl: string | null;
+  auth: OAuthAuth;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PolicyPoolAccount {
+  key: string;
+  enabled: boolean;
+  priority: number;
+  allowlist: string[];
+  blocklist: string[];
+}
+
 export interface UpsertAccountData {
   key: string;
   deployment?: string;
@@ -45,6 +65,16 @@ export interface UpsertAccountData {
 export interface AccountPool {
   version: number;
   accounts: PoolAccount[];
+}
+
+export interface AuthPoolDocument {
+  version: number;
+  accounts: AuthPoolAccount[];
+}
+
+export interface PolicyPoolDocument {
+  version: number;
+  accounts: PolicyPoolAccount[];
 }
 
 export interface LiveModel {

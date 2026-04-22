@@ -148,7 +148,9 @@ export async function getCopilotUsageDialogMessage() {
   const accounts = [...pool.accounts].sort((left, right) => left.key.localeCompare(right.key));
 
   if (accounts.length === 0) {
-    throw new Error("No Copilot accounts found in the account pool. Log in again to populate ~/.local/share/opencode/copilot-auth.json.");
+    throw new Error(
+      "No Copilot accounts found in the account pool. Log in again to populate ~/.local/share/opencode/copilot-auth.json (auth) and ~/.config/opencode/copilot-auth.json (policy).",
+    );
   }
 
   const sections = await Promise.all(accounts.map((account) => getCopilotUsageSummary(account)));
