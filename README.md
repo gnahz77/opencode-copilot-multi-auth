@@ -31,7 +31,10 @@ If you also want the TUI command support provided by this package, add the same 
 ```
 
 After restarting OpenCode TUI, you can open the command palette and run `copilot-usage`, or type `/copilot-usage`.
-The plugin will open a popup dialog showing all accounts currently stored in `~/.local/share/opencode/copilot-auth.json`.
+The plugin will open a popup dialog showing all accounts currently loaded from split local storage:
+
+- OAuth/account data: `~/.local/share/opencode/copilot-auth.json`
+- Per-account routing policy: `~/.config/opencode/copilot-auth.json`
 
 For local development before publishing, you can load the file directly:
 
@@ -66,7 +69,9 @@ This package now includes a TUI command named `copilot-usage`.
 
 What it does:
 
-- Reads every Copilot account stored in `~/.local/share/opencode/copilot-auth.json`
+- Reads every Copilot account from the merged local pool assembled from:
+  - `~/.local/share/opencode/copilot-auth.json` (OAuth/account data)
+  - `~/.config/opencode/copilot-auth.json` (routing policy)
 - Calls the GitHub Copilot entitlement endpoint `/copilot_internal/user` for each account using that account's OAuth token
 - Opens a popup dialog showing, for each account:
   - account name
@@ -147,10 +152,16 @@ The plugin intentionally does not try to change the `opencode` core UI. So the v
 
 ## Multi-Account Support
 
-This fork can keep a pool of Copilot logins in `~/.local/share/opencode/copilot-auth.json`.
+This fork keeps Copilot account state in split local files:
+
+- OAuth-required account data in `~/.local/share/opencode/copilot-auth.json`
+- Per-account routing policy in `~/.config/opencode/copilot-auth.json`
+
+On startup, the plugin automatically migrates legacy single-file storage into this two-file layout.
+
 Each successful OAuth login updates that pool automatically: logging in with a new deployment-scoped account appends a new record, and logging in again with the same GitHub identity on the same deployment updates the existing record instead of creating a duplicate.
 
-The pool stores one object per account under `accounts` in a `version: 1` document.
+At runtime, the plugin merges both files into the same in-memory `version: 2` pool shape (`accounts`) used for routing.
 
 | Field | Meaning |
 | --- | --- |
@@ -165,20 +176,14 @@ Automatic routing works on the raw Copilot model IDs that `opencode` already use
 
 Wildcard matching is case-sensitive and currently supports `*` for zero or more characters anywhere in the pattern. For example, `claude-*` matches `claude-sonnet-4.6` and `claude-opus-4.6`.
 
-Example pool file:
+Example auth file (`~/.local/share/opencode/copilot-auth.json`):
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "accounts": [
     {
       "key": "github.com:12345678",
-      "id": "work",
-      "name": "Work",
-      "enabled": true,
-      "priority": 100,
-      "allowlist": ["claude-*"],
-      "blocklist": [],
       "deployment": "github.com",
       "domain": "github.com",
       "baseUrl": "https://api.githubcopilot.com",
@@ -192,6 +197,23 @@ Example pool file:
       },
       "createdAt": "2026-04-15T00:00:00.000Z",
       "updatedAt": "2026-04-15T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+Example policy file (`~/.config/opencode/copilot-auth.json`):
+
+```json
+{
+  "version": 2,
+  "accounts": [
+    {
+      "key": "github.com:12345678",
+      "enabled": true,
+      "priority": 100,
+      "allowlist": ["claude-*"],
+      "blocklist": []
     }
   ]
 }

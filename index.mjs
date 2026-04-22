@@ -1,9 +1,11 @@
 export {
   CopilotAuthPlugin,
   deriveAccountKey,
+  getPolicyPath,
   getPoolPath,
   injectRoutingHeaders,
   lookupGitHubIdentity,
+  migrateLegacyPoolStorageIfNeeded,
   readPool,
   resolveWinnerAccount,
   stripRoutingHeaders,

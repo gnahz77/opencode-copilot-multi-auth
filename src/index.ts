@@ -19,7 +19,9 @@ import {
 import { buildPoolBackedModels, normalizeExistingModels, resolveProviderModels } from "./models.js";
 import {
   deriveAccountKey,
+  getPolicyPath,
   getPoolPath,
+  migrateLegacyPoolStorageIfNeeded,
   readPool,
   resolveWinnerAccount,
   upsertAccount,
@@ -36,10 +38,29 @@ import {
 } from "./utils.js";
 import type { PoolAccount } from "./types.js";
 
-export { getPoolPath, readPool, writePool, deriveAccountKey, lookupGitHubIdentity, upsertAccount, resolveWinnerAccount };
+export {
+  getPoolPath,
+  getPolicyPath,
+  readPool,
+  writePool,
+  migrateLegacyPoolStorageIfNeeded,
+  deriveAccountKey,
+  lookupGitHubIdentity,
+  upsertAccount,
+  resolveWinnerAccount,
+};
 export { injectRoutingHeaders, stripRoutingHeaders };
 
 export const CopilotAuthPlugin: Plugin = async (input) => {
+  try {
+    migrateLegacyPoolStorageIfNeeded();
+  } catch (error) {
+    console.warn(
+      "[opencode-copilot-cli-auth] Failed to run pool storage migration:",
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+
   return {
     provider: {
       id: "github-copilot",

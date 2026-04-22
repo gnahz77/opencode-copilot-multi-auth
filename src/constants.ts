@@ -1,4 +1,4 @@
-export const ACCOUNT_POOL_SCHEMA_VERSION = 1;
+export const ACCOUNT_POOL_SCHEMA_VERSION = 2;
 export const ROUTING_ACCOUNT_KEY_HEADER = "x-opencode-copilot-account-key";
 export const ROUTING_SOURCE_HEADER = "x-opencode-copilot-route-source";
 export const INTERNAL_ROUTING_HEADERS = new Set([
