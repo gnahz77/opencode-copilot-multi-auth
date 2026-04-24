@@ -1,5 +1,7 @@
 # opencode-copilot-multi-auth
 
+[中文文档](README.zh.md)
+
 Package on npm: https://www.npmjs.com/package/@gnahz77/opencode-copilot-multi-auth
 
 This fork replaces the older GitHub Copilot chat-auth flow with the newer Copilot CLI-style OAuth flow and makes `opencode` use the live Copilot model metadata for your account.
