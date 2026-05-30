@@ -26,7 +26,7 @@ async function showCopilotUsageDialog(api: Parameters<TuiPlugin>[0]) {
 }
 
 const tui: TuiPlugin = async (api) => {
-  api.command.register(() => [
+  api.command?.register(() => [
     {
       title: "Copilot Usage",
       value: "copilot-usage",
