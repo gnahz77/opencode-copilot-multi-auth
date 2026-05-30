@@ -325,3 +325,29 @@ export async function fetchWithSelectedAccount(
 
   return retryResponse;
 }
+
+export async function fetchWithAccountFallback(
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  candidates: PoolAccount[],
+): Promise<Response> {
+  if (candidates.length === 0) {
+    throw new Error("[opencode-copilot-cli-auth] No eligible accounts available for this model; re-login required");
+  }
+
+  let lastError: unknown;
+
+  for (const account of candidates) {
+    try {
+      return await fetchWithSelectedAccount(input, init, account);
+    } catch (error: unknown) {
+      lastError = error;
+      console.warn(
+        `[opencode-copilot-cli-auth] Account ${account.key ?? "unknown"} failed, trying next:`,
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  throw lastError ?? new Error("[opencode-copilot-cli-auth] All candidate accounts exhausted; re-login required");
+}

@@ -536,7 +536,7 @@ export function upsertAccount(pool: AccountPool, accountData: UpsertAccountData)
   };
 }
 
-export function resolveWinnerAccount(rawModelId: string, pool: AccountPool) {
+export function resolveCandidateAccounts(rawModelId: string, pool: AccountPool): PoolAccount[] {
   const canAccountServeModel = (account: PoolAccount) => {
     const allowlist = normalizeList(account?.allowlist);
     if (allowlist.length > 0 && !matchesAnyModelIdPattern(allowlist, rawModelId)) {
@@ -547,7 +547,7 @@ export function resolveWinnerAccount(rawModelId: string, pool: AccountPool) {
     return !matchesAnyModelIdPattern(blocklist, rawModelId);
   };
 
-  const candidates = (Array.isArray(pool?.accounts) ? pool.accounts : [])
+  return (Array.isArray(pool?.accounts) ? pool.accounts : [])
     .filter((account) => account?.enabled !== false)
     .filter(canAccountServeModel)
     .sort((left, right) => {
@@ -558,6 +558,8 @@ export function resolveWinnerAccount(rawModelId: string, pool: AccountPool) {
 
       return String(left?.key ?? "").localeCompare(String(right?.key ?? ""));
     });
+}
 
-  return candidates[0] ?? null;
+export function resolveWinnerAccount(rawModelId: string, pool: AccountPool) {
+  return resolveCandidateAccounts(rawModelId, pool)[0] ?? null;
 }

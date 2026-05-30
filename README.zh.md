@@ -14,7 +14,7 @@ npm 上的包主页: https://www.npmjs.com/package/@gnahz77/opencode-copilot-mul
 {
   "$schema": "https://opencode.ai/config.json",
   "plugin": [
-    "@gnahz77/opencode-copilot-multi-auth@0.1.4"
+    "@gnahz77/opencode-copilot-multi-auth@0.1.5"
   ]
 }
 ```
@@ -27,7 +27,7 @@ npm 上的包主页: https://www.npmjs.com/package/@gnahz77/opencode-copilot-mul
 {
   "$schema": "https://opencode.ai/tui.json",
   "plugin": [
-    "@gnahz77/opencode-copilot-multi-auth@0.1.4"
+    "@gnahz77/opencode-copilot-multi-auth@0.1.5"
   ]
 }
 ```
