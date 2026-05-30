@@ -14,7 +14,7 @@ Add the plugin to your `opencode` config:
 {
   "$schema": "https://opencode.ai/config.json",
   "plugin": [
-    "@gnahz77/opencode-copilot-multi-auth@0.1.4"
+    "@gnahz77/opencode-copilot-multi-auth@0.1.5"
   ]
 }
 ```
@@ -27,7 +27,7 @@ If you also want the TUI command support provided by this package, add the same 
 {
   "$schema": "https://opencode.ai/tui.json",
   "plugin": [
-    "@gnahz77/opencode-copilot-multi-auth@0.1.4"
+    "@gnahz77/opencode-copilot-multi-auth@0.1.5"
   ]
 }
 ```
