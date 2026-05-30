@@ -9,6 +9,7 @@ import {
 import {
   buildHeaders,
   fetchEntitlement,
+  fetchWithAccountFallback,
   fetchWithSelectedAccount,
   getBaseURL,
   getCopilotToken,
@@ -23,6 +24,7 @@ import {
   getPoolPath,
   migrateLegacyPoolStorageIfNeeded,
   readPool,
+  resolveCandidateAccounts,
   resolveWinnerAccount,
   upsertAccount,
   writePool,
@@ -47,6 +49,7 @@ export {
   deriveAccountKey,
   lookupGitHubIdentity,
   upsertAccount,
+  resolveCandidateAccounts,
   resolveWinnerAccount,
 };
 export { injectRoutingHeaders, stripRoutingHeaders };
@@ -120,6 +123,18 @@ export const CopilotAuthPlugin: Plugin = async (input) => {
             const requestedRawModelId = getRequestedRawModelId(init);
 
             if (pool.accounts.length > 0) {
+              if (requestedRawModelId) {
+                const candidates = resolveCandidateAccounts(requestedRawModelId, pool);
+                const oauthCandidates = candidates.filter(
+                  (account) => account.auth?.type === "oauth"
+                    && typeof account.auth.refresh === "string"
+                    && account.auth.refresh.trim(),
+                );
+                if (oauthCandidates.length > 0) {
+                  return fetchWithAccountFallback(inputRequest, init, oauthCandidates);
+                }
+              }
+
               const selectedAccount = resolveSelectedPoolAccount(pool, accountKey, requestedRawModelId);
               if (selectedAccount?.auth?.type === "oauth") {
                 return fetchWithSelectedAccount(inputRequest, init, selectedAccount);
